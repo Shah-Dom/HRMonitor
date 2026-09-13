@@ -16,6 +16,7 @@
     --text:#EAF0F6;
     --muted:#7C90AC;
     --pulse:#FF5D73;
+    --heart-red:#FF3B4E;
 
     --z-resting:#3E5875;
     --z-warmup:#4AA3C9;
@@ -26,6 +27,7 @@
 
     --accent:var(--pulse);
     --accent-dim: rgba(255,93,115,0.18);
+    --beat-dur: 1s;
   }
 
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
@@ -122,7 +124,7 @@
     height:min(62vw, 250px);
     display:flex; align-items:center; justify-content:center;
   }
-  .dial-wrap svg{ position:absolute; inset:0; transform:rotate(-90deg); }
+  .dial-wrap svg.ring{ position:absolute; inset:0; transform:rotate(-90deg); }
   .dial-track{ fill:none; stroke:var(--line); stroke-width:9; }
   .dial-progress{
     fill:none; stroke:var(--accent); stroke-width:9; stroke-linecap:round;
@@ -132,30 +134,45 @@
 
   .dial-center{ text-align:center; }
   .bpm-value{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .heart-beat-box{
+    width:30px; height:30px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--heart-red);
+    flex:none;
+    overflow:visible;
+  }
+  .heart-beat-box svg{
+    width:100%; height:100%;
+    animation:heartbeat var(--beat-dur,1s) ease-in-out infinite;
+    animation-play-state:paused;
+    transform-origin:50% 50%;
+  }
+  .heart-beat-box.active svg{ animation-play-state:running; }
+  @keyframes heartbeat{
+    0%{   transform:translateY(0) scale(1);      opacity:1;    }
+    15%{  transform:translateY(-5px) scale(1.28); opacity:1;    }
+    30%{  transform:translateY(1px) scale(0.9);   opacity:0.5;  }
+    45%{  transform:translateY(-2px) scale(1.08); opacity:1;    }
+    60%{  transform:translateY(0) scale(1);       opacity:0.85; }
+    100%{ transform:translateY(0) scale(1);       opacity:1;    }
+  }
+
+  .bpm-value .num{
     font-family:'Space Grotesk',monospace;
     font-weight:700;
     font-size:clamp(48px,14vw,64px);
     letter-spacing:-1px;
     color:var(--text);
-    display:flex; align-items:baseline; justify-content:center; gap:6px;
   }
   .bpm-value .unit{
     font-family:'Inter',sans-serif;
     font-weight:500;
     font-size:14px;
     color:var(--muted);
-  }
-  .bpm-heart{
-    display:inline-block; margin-right:2px;
-    color:var(--accent);
-    transform-origin:center;
-  }
-  .bpm-heart.beat{ animation:beat 0.55s ease-out; }
-  @keyframes beat{
-    0%{ transform:scale(1); }
-    30%{ transform:scale(1.35); }
-    60%{ transform:scale(0.95); }
-    100%{ transform:scale(1); }
+    align-self:flex-end;
+    margin-bottom:10px;
   }
 
   .contact-flag{
@@ -206,6 +223,39 @@
   .stat.max .val{ color:var(--z-peak); }
   .stat.stress .val{ font-size:15px; }
 
+  /* ---------- HRV / stress panel ---------- */
+  .hrv-row{
+    display:flex; align-items:center; gap:16px;
+  }
+  .hrv-value{
+    display:flex; flex-direction:column; align-items:flex-start; min-width:82px; flex:none;
+  }
+  .hrv-value .v{
+    font-family:'Space Grotesk',monospace;
+    font-size:26px;
+    font-weight:700;
+  }
+  .hrv-value .u{
+    font-size:10px; color:var(--muted); margin-top:2px;
+  }
+  .hrv-gauge-wrap{ flex:1; min-width:0; }
+  .hrv-gauge-track{
+    height:10px; border-radius:6px;
+    background:var(--ink);
+    border:1px solid var(--line);
+    overflow:hidden;
+  }
+  .hrv-gauge-fill{
+    height:100%; width:0%;
+    border-radius:6px 0 0 6px;
+    background:var(--z-fatburn);
+    transition:width .6s ease, background .3s ease;
+  }
+  .hrv-gauge-label{
+    margin-top:7px; font-size:11.5px; color:var(--muted);
+  }
+  .hrv-gauge-label b{ color:var(--text); font-weight:600; }
+
   /* ---------- Chart panel ---------- */
   .panel{
     background:var(--surface);
@@ -214,14 +264,19 @@
     padding:14px 12px 10px;
   }
   .panel-head{
-    display:flex; justify-content:space-between; align-items:center;
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap;
     padding:0 4px 10px;
+    gap:10px;
   }
   .panel-head .t{
     font-size:13px; font-weight:600; color:var(--text);
+    flex:none;
   }
   .legend{
     display:flex; gap:10px; font-size:10.5px; color:var(--muted);
+    margin-left:auto;
+    flex:none;
+    white-space:nowrap;
   }
   .legend span{ display:flex; align-items:center; gap:4px; }
   .legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; }
@@ -248,6 +303,60 @@
     border-top:3px solid transparent;
     padding-top:5px;
   }
+
+  /* ---------- Workout panel ---------- */
+  .workout-timer{
+    font-family:'Space Grotesk',monospace;
+    font-weight:600;
+    font-size:15px;
+    color:var(--muted);
+    flex:none;
+  }
+  .zone-bar{
+    display:flex;
+    height:14px;
+    border-radius:8px;
+    overflow:hidden;
+    margin:2px 0 14px;
+    background:var(--ink);
+    border:1px solid var(--line);
+  }
+  .zone-bar .seg{ height:100%; transition:width .5s ease; }
+
+  .action-btn{
+    width:100%;
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--muted);
+    padding:11px;
+    border-radius:12px;
+    font-size:13px;
+    font-weight:500;
+    font-family:'Inter',sans-serif;
+    cursor:pointer;
+  }
+  .action-btn:active{ transform:scale(0.99); }
+  .action-btn.accent{ border-color:var(--accent); color:var(--accent); }
+  .action-btn.accent.active{ background:var(--accent); color:#08101c; }
+
+  .summary-stats{
+    display:flex; justify-content:space-between; margin-bottom:14px;
+  }
+  .summary-stats div{ text-align:center; flex:1; }
+  .summary-stats .v{
+    font-family:'Space Grotesk',monospace; font-weight:600; font-size:16px;
+  }
+  .summary-stats .l{ font-size:9.5px; color:var(--muted); margin-top:2px; }
+
+  .zone-rows{ display:flex; flex-direction:column; gap:7px; margin-bottom:14px; }
+  .zone-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; }
+  .zone-row .sw{ width:9px; height:9px; border-radius:2px; flex:none; }
+  .zone-row .nm{ flex:1; color:var(--text); }
+  .zone-row .tm{ color:var(--text); font-family:'Space Grotesk',monospace; font-size:12px; }
+  .zone-row .pc{ width:38px; text-align:right; color:var(--muted); font-size:11px; }
+
+  .btn-row{ display:flex; gap:8px; }
+  .btn-row .action-btn{ flex:1; }
 
   /* ---------- Settings ---------- */
   .settings{
@@ -286,20 +395,7 @@
   }
   .field .suf{ font-size:11.5px; color:var(--muted); }
 
-  .reset-btn{
-    margin-top:14px;
-    width:100%;
-    background:transparent;
-    border:1px solid var(--line);
-    color:var(--muted);
-    padding:11px;
-    border-radius:12px;
-    font-size:13px;
-    font-weight:500;
-    font-family:'Inter',sans-serif;
-    cursor:pointer;
-  }
-  .reset-btn:active{ transform:scale(0.99); }
+  .settings .btn-row{ margin-top:14px; }
 
   .footer-note{
     text-align:center;
@@ -331,17 +427,17 @@
 
   <div class="hero">
     <div class="dial-wrap">
-      <svg viewBox="0 0 200 200">
+      <svg class="ring" viewBox="0 0 200 200">
         <circle class="dial-track" cx="100" cy="100" r="88"></circle>
         <circle class="dial-progress" id="dialProgress" cx="100" cy="100" r="88"
           stroke-dasharray="553" stroke-dashoffset="553"></circle>
       </svg>
       <div class="dial-center">
         <div class="bpm-value">
-          <span class="bpm-heart" id="heartGlyph">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.9-10.2-9.3C-.3 7.9 1.7 4 5.6 4c2.2 0 3.9 1.2 4.9 2.9C11.5 5.2 13.2 4 15.4 4c3.9 0 5.9 3.9 3.8 7.7C19.5 16.1 12 21 12 21z"/></svg>
+          <span class="heart-beat-box" id="heartGlyph">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.9-10.2-9.3C-.3 7.9 1.7 4 5.6 4c2.2 0 3.9 1.2 4.9 2.9C11.5 5.2 13.2 4 15.4 4c3.9 0 5.9 3.9 3.8 7.7C19.5 16.1 12 21 12 21z"/></svg>
           </span>
-          <span id="bpmVal">--</span>
+          <span class="num" id="bpmVal">--</span>
           <span class="unit">bpm</span>
         </div>
         <div class="contact-flag" id="contactFlag">Waiting for signal</div>
@@ -375,6 +471,39 @@
 
   <div class="panel">
     <div class="panel-head">
+      <div class="t">Heart Rate Variability</div>
+    </div>
+    <div class="hrv-row">
+      <div class="hrv-value">
+        <span class="v" id="hrvVal">--</span>
+        <span class="u">ms &middot; RMSSD</span>
+      </div>
+      <div class="hrv-gauge-wrap">
+        <div class="hrv-gauge-track"><div class="hrv-gauge-fill" id="hrvGaugeFill"></div></div>
+        <div class="hrv-gauge-label"><b id="stressPctVal">--%</b> stress &middot; <span id="stressLabelVal">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="workoutPanel">
+    <div class="panel-head">
+      <div class="t">Workout</div>
+      <div class="workout-timer" id="workoutTimer">00:00</div>
+    </div>
+    <div class="zone-bar" id="workoutLiveBar" style="display:none;"></div>
+    <button class="action-btn accent" id="workoutBtn">Start Workout</button>
+
+    <div id="workoutSummary" style="display:none; margin-top:14px;">
+      <div class="summary-stats" id="summaryStats"></div>
+      <div class="zone-rows" id="summaryZoneRows"></div>
+      <div class="btn-row">
+        <button class="action-btn" id="newWorkoutBtn">Start New Workout</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
       <div class="t">Live trend</div>
       <div class="legend">
         <span><i style="background:var(--muted); opacity:.5"></i>reading</span>
@@ -391,7 +520,7 @@
       <div class="field">
         <label for="ageInput">Age</label>
         <div class="input-wrap">
-          <input type="number" id="ageInput" value="35" min="5" max="100" inputmode="numeric">
+          <input type="number" id="ageInput" value="50" min="5" max="100" inputmode="numeric">
           <span class="suf">yrs</span>
         </div>
       </div>
@@ -403,12 +532,16 @@
         </div>
       </div>
     </div>
-    <button class="reset-btn" id="resetBtn">Reset session</button>
+    <div class="btn-row">
+      <button class="action-btn" id="exportBtn">Export data (CSV)</button>
+      <button class="action-btn" id="resetBtn">Reset session</button>
+    </div>
   </div>
 
   <div class="footer-note">
     Standard BLE Heart Rate Service (0x180D / 0x2A37).<br>
-    Works with any compliant chest strap or armband, incl. <b>Crane/Workzone AA5-CDBT-1</b>.
+    Works with any compliant chest strap or armband, incl. <b>Crane/Workzone AA5-CDBT-1</b>.<br>
+    HRV, stress and zone figures are estimates for personal tracking, not medical measurements.
   </div>
 
 </div>
@@ -423,7 +556,11 @@
   let rrIntervals=[];    // ms, rolling
   let smoothed=[];       // {t, v}
   let sessionMin=null, sessionMax=null;
-  let lastBeatFlash=0;
+
+  let workoutActive=false, workoutStart=null;
+  let workoutZoneMs={resting:0,warmup:0,fatburn:0,cardio:0,hardcore:0,peak:0};
+  let workoutMin=null, workoutMax=null, workoutSum=0, workoutCount=0;
+  let lastWorkoutSummary=null;
 
   const els = {
     connBtn: document.getElementById('connBtn'),
@@ -440,11 +577,23 @@
     avgVal: document.getElementById('avgVal'),
     maxVal: document.getElementById('maxVal'),
     stressVal: document.getElementById('stressVal'),
+    hrvVal: document.getElementById('hrvVal'),
+    hrvGaugeFill: document.getElementById('hrvGaugeFill'),
+    stressPctVal: document.getElementById('stressPctVal'),
+    stressLabelVal: document.getElementById('stressLabelVal'),
     ageInput: document.getElementById('ageInput'),
     avgInput: document.getElementById('avgInput'),
     resetBtn: document.getElementById('resetBtn'),
+    exportBtn: document.getElementById('exportBtn'),
     zoneKey: document.getElementById('zoneKey'),
     canvas: document.getElementById('chart'),
+    workoutBtn: document.getElementById('workoutBtn'),
+    workoutTimer: document.getElementById('workoutTimer'),
+    workoutLiveBar: document.getElementById('workoutLiveBar'),
+    workoutSummary: document.getElementById('workoutSummary'),
+    summaryStats: document.getElementById('summaryStats'),
+    summaryZoneRows: document.getElementById('summaryZoneRows'),
+    newWorkoutBtn: document.getElementById('newWorkoutBtn'),
   };
 
   const ZONES = [
@@ -460,8 +609,15 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
+  function hexToRgba(hex, alpha){
+    hex = hex.replace('#','').trim();
+    if(hex.length===3){ hex = hex.split('').map(c=>c+c).join(''); }
+    const r=parseInt(hex.substring(0,2),16), g=parseInt(hex.substring(2,4),16), b=parseInt(hex.substring(4,6),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
   function maxHR(){
-    const age = parseFloat(els.ageInput.value) || 35;
+    const age = parseFloat(els.ageInput.value) || 50;
     return 220 - age;
   }
 
@@ -484,6 +640,15 @@
     });
   }
   buildZoneKey();
+
+  function formatDuration(ms){
+    const totalSec = Math.max(0, Math.floor(ms/1000));
+    const h = Math.floor(totalSec/3600);
+    const m = Math.floor((totalSec%3600)/60);
+    const s = totalSec%60;
+    const pad = n => String(n).padStart(2,'0');
+    return h>0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  }
 
   // ---------- Web Bluetooth ----------
   async function toggleConnect(){
@@ -526,6 +691,7 @@
     els.deviceSub.textContent = 'Disconnected';
     els.contactFlag.textContent = 'No signal';
     els.contactFlag.classList.add('bad');
+    els.heartGlyph.classList.remove('active');
   }
 
   function onHRNotify(event){
@@ -546,9 +712,11 @@
     if(sessionMax===null || parsed.hr > sessionMax) sessionMax = parsed.hr;
 
     els.bpmVal.textContent = parsed.hr;
-    els.heartGlyph.classList.remove('beat');
-    void els.heartGlyph.offsetWidth; // restart animation
-    els.heartGlyph.classList.add('beat');
+
+    // heart glyph: continuous beat animation synced to real HR tempo
+    els.heartGlyph.classList.add('active');
+    const dur = Math.max(0.35, Math.min(2, 60 / Math.max(30, parsed.hr)));
+    els.heartGlyph.style.setProperty('--beat-dur', dur + 's');
 
     if(parsed.contactSupported){
       els.contactFlag.textContent = parsed.contactDetected ? 'Contact detected' : 'Check sensor contact';
@@ -605,9 +773,53 @@
     els.zonePct.textContent = '· ' + Math.round(z.pct*100) + '% of max HR';
   }
 
-  // ---------- Moving average (every second) & stress ----------
+  // ---------- Moving average (every second), HRV & stress ----------
   function avgWindowSec(){
     return Math.max(1, parseFloat(els.avgInput.value) || 5);
+  }
+
+  function stdev(arr){
+    if(arr.length < 2) return 0;
+    const m = arr.reduce((a,b)=>a+b,0)/arr.length;
+    const v = arr.reduce((a,b)=>a+(b-m)*(b-m),0)/(arr.length-1);
+    return Math.sqrt(v);
+  }
+
+  function computeHRVAndStress(now){
+    const recentRR = rrIntervals.slice(-16);
+    let rmssd = null, pct, label;
+
+    if(recentRR.length >= 6){
+      let sumSq = 0;
+      for(let i=1;i<recentRR.length;i++){
+        const d = recentRR[i]-recentRR[i-1];
+        sumSq += d*d;
+      }
+      rmssd = Math.sqrt(sumSq/(recentRR.length-1));
+      pct = Math.round(Math.max(0, Math.min(100, 100 * (1 - Math.min(rmssd,80)/80))));
+    } else {
+      const recent = raw.filter(r => now - r.t <= 20000).map(r=>r.hr);
+      const sd = stdev(recent);
+      pct = Math.round(Math.max(0, Math.min(100, sd*10)));
+    }
+
+    let score;
+    if(pct < 25){ label='Low'; score=0; }
+    else if(pct < 50){ label='Moderate'; score=1; }
+    else if(pct < 75){ label='High'; score=2; }
+    else { label='Very High'; score=3; }
+
+    const colors = ['var(--z-fatburn)','var(--z-warmup)','var(--z-hardcore)','var(--z-peak)'];
+    const color = colors[score];
+
+    els.stressVal.textContent = label;
+    els.stressVal.style.color = color;
+
+    els.hrvVal.textContent = rmssd!==null ? Math.round(rmssd) : '--';
+    els.hrvGaugeFill.style.width = pct + '%';
+    els.hrvGaugeFill.style.background = color;
+    els.stressPctVal.textContent = pct + '%';
+    els.stressLabelVal.textContent = label;
   }
 
   function tick(){
@@ -626,44 +838,23 @@
     const cutoff = now - 10*60*1000;
     while(smoothed.length && smoothed[0].t < cutoff) smoothed.shift();
 
-    updateStress(now);
-    drawChart();
-  }
+    computeHRVAndStress(now);
 
-  function stdev(arr){
-    if(arr.length < 2) return 0;
-    const m = arr.reduce((a,b)=>a+b,0)/arr.length;
-    const v = arr.reduce((a,b)=>a+(b-m)*(b-m),0)/(arr.length-1);
-    return Math.sqrt(v);
-  }
-
-  function updateStress(now){
-    let score, label;
-    const recentRR = rrIntervals.slice(-16);
-    if(recentRR.length >= 6){
-      // RMSSD of recent RR intervals: higher variability -> calmer, lower -> more stressed
-      let sumSq = 0;
-      for(let i=1;i<recentRR.length;i++){
-        const d = recentRR[i]-recentRR[i-1];
-        sumSq += d*d;
+    if(workoutActive){
+      const latest = raw.length ? raw[raw.length-1].hr : null;
+      if(latest != null){
+        const z = zoneFor(latest);
+        workoutZoneMs[z.key] += 1000;
+        workoutSum += latest;
+        workoutCount += 1;
+        if(workoutMin===null || latest < workoutMin) workoutMin = latest;
+        if(workoutMax===null || latest > workoutMax) workoutMax = latest;
       }
-      const rmssd = Math.sqrt(sumSq/(recentRR.length-1));
-      if(rmssd > 45) { label='Low'; score=0; }
-      else if(rmssd > 25){ label='Moderate'; score=1; }
-      else if(rmssd > 12){ label='High'; score=2; }
-      else { label='Very High'; score=3; }
-    } else {
-      // fallback: fluctuation of raw HR over the last 20s
-      const recent = raw.filter(r => now - r.t <= 20000).map(r=>r.hr);
-      const sd = stdev(recent);
-      if(sd < 2.5){ label='Low'; score=0; }
-      else if(sd < 5){ label='Moderate'; score=1; }
-      else if(sd < 9){ label='High'; score=2; }
-      else { label='Very High'; score=3; }
+      els.workoutTimer.textContent = formatDuration(Date.now() - workoutStart);
+      updateLiveZoneBar();
     }
-    const colors = ['var(--z-fatburn)','var(--z-warmup)','var(--z-hardcore)','var(--z-peak)'];
-    els.stressVal.textContent = label;
-    els.stressVal.style.color = colors[score];
+
+    drawChart();
   }
 
   // ---------- Chart ----------
@@ -694,21 +885,21 @@
     const xForT = t => ((t - t0) / windowMs) * W;
     const yForV = v => H - ((v - yMin) / (yMax - yMin)) * H;
 
-    // zone background bands
+    // zone background bands — bold, clearly distinguishable
     ZONES.forEach(z=>{
       const vFrom = z.from*mh, vTo = Math.min(z.to*mh, yMax);
       if(vTo <= yMin) return;
       const yTop = yForV(Math.min(vTo,yMax));
       const yBot = yForV(Math.max(vFrom,yMin));
       ctx.fillStyle = cssVar(z.color);
-      ctx.globalAlpha = 0.14;
+      ctx.globalAlpha = 0.32;
       ctx.fillRect(0, yTop, W, yBot - yTop);
     });
     ctx.globalAlpha = 1;
 
     // horizontal grid + labels
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = `${11*dpr}px Inter, sans-serif`;
     ctx.lineWidth = 1;
     const step = 20;
@@ -719,8 +910,34 @@
       ctx.fillText(String(v), 6*dpr, y - 3*dpr);
     }
 
+    const pts = smoothed.filter(p => p.t >= t0);
+
+    // gradient area fill under the smoothed line, colored per zone segment
+    if(pts.length > 1){
+      for(let i=0;i<pts.length-1;i++){
+        const p0 = pts[i], p1 = pts[i+1];
+        const x0 = xForT(p0.t), x1 = xForT(p1.t);
+        const y0 = yForV(p0.v), y1 = yForV(p1.v);
+        const mid = (p0.v + p1.v) / 2;
+        const z = zoneFor(mid);
+        const color = cssVar(z.color);
+        const topY = Math.min(y0,y1);
+        const grad = ctx.createLinearGradient(0, topY, 0, H);
+        grad.addColorStop(0, hexToRgba(color, 0.45));
+        grad.addColorStop(1, hexToRgba(color, 0));
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(x0, H);
+        ctx.lineTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.lineTo(x1, H);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
     // raw scatter
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
     raw.forEach(r=>{
       if(r.t < t0) return;
       const x = xForT(r.t), y = yForV(r.hr);
@@ -729,27 +946,150 @@
       ctx.fill();
     });
 
-    // smoothed moving-average line
-    const pts = smoothed.filter(p => p.t >= t0);
+    // smoothed moving-average line — bold, glowing
     if(pts.length > 1){
-      const accent = cssVar('--z-resting');
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#FF5D73';
-      ctx.lineWidth = 2.5*dpr;
+      const strokeColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#FF5D73';
+      ctx.save();
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 4.5*dpr;
       ctx.lineJoin='round'; ctx.lineCap='round';
+      ctx.shadowColor = strokeColor;
+      ctx.shadowBlur = 10*dpr;
       ctx.beginPath();
       pts.forEach((p,i)=>{
         const x = xForT(p.t), y = yForV(p.v);
         if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
       });
       ctx.stroke();
+      ctx.restore();
 
       // glow dot at latest point
       const last = pts[pts.length-1];
       ctx.beginPath();
-      ctx.arc(xForT(last.t), yForV(last.v), 3.5*dpr, 0, Math.PI*2);
-      ctx.fillStyle = ctx.strokeStyle;
+      ctx.arc(xForT(last.t), yForV(last.v), 4*dpr, 0, Math.PI*2);
+      ctx.fillStyle = strokeColor;
       ctx.fill();
     }
+  }
+
+  // ---------- Workout ----------
+  function resetWorkoutState(){
+    workoutActive = false;
+    workoutStart = null;
+    workoutZoneMs = {resting:0,warmup:0,fatburn:0,cardio:0,hardcore:0,peak:0};
+    workoutMin=null; workoutMax=null; workoutSum=0; workoutCount=0;
+    els.workoutBtn.textContent = 'Start Workout';
+    els.workoutBtn.classList.remove('active');
+    els.workoutTimer.textContent = '00:00';
+    els.workoutLiveBar.style.display = 'none';
+    els.workoutLiveBar.innerHTML = '';
+    els.workoutSummary.style.display = 'none';
+  }
+
+  function updateLiveZoneBar(){
+    const total = Object.values(workoutZoneMs).reduce((a,b)=>a+b,0);
+    els.workoutLiveBar.innerHTML = '';
+    if(total <= 0) return;
+    ZONES.forEach(z=>{
+      const ms = workoutZoneMs[z.key];
+      if(ms <= 0) return;
+      const seg = document.createElement('div');
+      seg.className = 'seg';
+      seg.style.width = (ms/total*100) + '%';
+      seg.style.background = cssVar(z.color);
+      els.workoutLiveBar.appendChild(seg);
+    });
+  }
+
+  function renderWorkoutSummary(summary){
+    const total = Object.values(summary.zoneMs).reduce((a,b)=>a+b,0) || 1;
+
+    els.summaryStats.innerHTML = `
+      <div><div class="v">${formatDuration(summary.duration)}</div><div class="l">Duration</div></div>
+      <div><div class="v">${summary.avg ?? '--'}</div><div class="l">Avg BPM</div></div>
+      <div><div class="v">${summary.min ?? '--'}</div><div class="l">Min BPM</div></div>
+      <div><div class="v">${summary.max ?? '--'}</div><div class="l">Max BPM</div></div>
+    `;
+
+    els.summaryZoneRows.innerHTML = '';
+    ZONES.forEach(z=>{
+      const ms = summary.zoneMs[z.key] || 0;
+      const row = document.createElement('div');
+      row.className = 'zone-row';
+      row.innerHTML = `
+        <span class="sw" style="background:${cssVar(z.color)}"></span>
+        <span class="nm">${z.name}</span>
+        <span class="tm">${formatDuration(ms)}</span>
+        <span class="pc">${Math.round(ms/total*100)}%</span>
+      `;
+      els.summaryZoneRows.appendChild(row);
+    });
+
+    els.workoutSummary.style.display = 'block';
+    els.workoutLiveBar.style.display = 'none';
+  }
+
+  function toggleWorkout(){
+    if(!workoutActive){
+      resetWorkoutState();
+      workoutActive = true;
+      workoutStart = Date.now();
+      els.workoutBtn.textContent = 'Finish Workout';
+      els.workoutBtn.classList.add('active');
+      els.workoutLiveBar.style.display = 'flex';
+      els.workoutSummary.style.display = 'none';
+    } else {
+      workoutActive = false;
+      lastWorkoutSummary = {
+        duration: Date.now() - workoutStart,
+        avg: workoutCount ? Math.round(workoutSum/workoutCount) : null,
+        min: workoutMin,
+        max: workoutMax,
+        zoneMs: {...workoutZoneMs},
+      };
+      els.workoutBtn.textContent = 'Start Workout';
+      els.workoutBtn.classList.remove('active');
+      renderWorkoutSummary(lastWorkoutSummary);
+    }
+  }
+
+  // ---------- Export ----------
+  function exportCSV(){
+    const lines = [];
+    lines.push('Heart Rate Monitor session export');
+    lines.push('Generated,' + new Date().toISOString());
+    lines.push('');
+    lines.push('timestamp,heart_rate_bpm');
+    raw.forEach(r => lines.push(new Date(r.t).toISOString() + ',' + r.hr));
+    lines.push('');
+    lines.push('timestamp,moving_average_bpm');
+    smoothed.forEach(p => lines.push(new Date(p.t).toISOString() + ',' + Math.round(p.v)));
+
+    if(lastWorkoutSummary){
+      lines.push('');
+      lines.push('Last workout summary');
+      lines.push('duration_sec,' + Math.round(lastWorkoutSummary.duration/1000));
+      lines.push('avg_bpm,' + (lastWorkoutSummary.avg ?? ''));
+      lines.push('min_bpm,' + (lastWorkoutSummary.min ?? ''));
+      lines.push('max_bpm,' + (lastWorkoutSummary.max ?? ''));
+      lines.push('');
+      lines.push('zone,seconds,percent');
+      const total = Object.values(lastWorkoutSummary.zoneMs).reduce((a,b)=>a+b,0) || 1;
+      ZONES.forEach(z=>{
+        const ms = lastWorkoutSummary.zoneMs[z.key] || 0;
+        lines.push(z.name + ',' + Math.round(ms/1000) + ',' + Math.round(ms/total*100));
+      });
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'heart-rate-session-' + new Date().toISOString().replace(/[:.]/g,'-') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   // ---------- Controls ----------
@@ -758,10 +1098,16 @@
     raw = []; smoothed = []; rrIntervals = [];
     sessionMin = null; sessionMax = null;
     els.minVal.textContent='--'; els.maxVal.textContent='--'; els.avgVal.textContent='--';
-    els.stressVal.textContent='--';
+    els.stressVal.textContent='--'; els.hrvVal.textContent='--';
+    els.hrvGaugeFill.style.width='0%'; els.stressPctVal.textContent='--%'; els.stressLabelVal.textContent='--';
+    resetWorkoutState();
+    lastWorkoutSummary = null;
     drawChart();
   });
+  els.exportBtn.addEventListener('click', exportCSV);
   els.ageInput.addEventListener('change', ()=> drawChart());
+  els.workoutBtn.addEventListener('click', toggleWorkout);
+  els.newWorkoutBtn.addEventListener('click', resetWorkoutState);
 
   // ---------- Init ----------
   resizeCanvas();
