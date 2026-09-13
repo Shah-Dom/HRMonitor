@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Heart Rate Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A1220;
+    --surface:#101B2D;
+    --surface-2:#0D1726;
+    --line:#1E2C42;
+    --text:#EAF0F6;
+    --muted:#7C90AC;
+    --pulse:#FF5D73;
+
+    --z-resting:#3E5875;
+    --z-warmup:#4AA3C9;
+    --z-fatburn:#45C29A;
+    --z-cardio:#F2B84B;
+    --z-hardcore:#F2793C;
+    --z-peak:#FF4757;
+
+    --accent:var(--pulse);
+    --accent-dim: rgba(255,93,115,0.18);
+  }
+
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+
+  html,body{
+    margin:0; padding:0;
+    background:var(--ink);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    min-height:100%;
+    overscroll-behavior-y:contain;
+  }
+
+  body{
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    display:flex; justify-content:center;
+  }
+
+  .app{
+    width:100%;
+    max-width:520px;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    padding:14px 14px 28px;
+    gap:14px;
+  }
+
+  /* ---------- Header ---------- */
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:4px 2px;
+  }
+  .brand{
+    display:flex; flex-direction:column; line-height:1.1;
+  }
+  .brand .name{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:17px;
+    letter-spacing:0.2px;
+  }
+  .brand .sub{
+    font-size:11.5px;
+    color:var(--muted);
+    margin-top:2px;
+  }
+  .conn-btn{
+    display:flex; align-items:center; gap:7px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    color:var(--text);
+    padding:9px 14px;
+    border-radius:20px;
+    font-size:13.5px;
+    font-weight:500;
+    font-family:'Inter',sans-serif;
+    cursor:pointer;
+    transition:border-color .2s, background .2s;
+  }
+  .conn-btn:active{ transform:scale(0.97); }
+  .conn-btn.on{
+    border-color:var(--accent);
+    color:var(--accent);
+  }
+  .dot{
+    width:7px; height:7px; border-radius:50%;
+    background:var(--muted);
+    flex:none;
+  }
+  .conn-btn.on .dot{
+    background:var(--accent);
+    box-shadow:0 0 8px var(--accent);
+  }
+
+  /* ---------- Hero dial ---------- */
+  .hero{
+    background:radial-gradient(120% 120% at 50% 0%, var(--surface) 0%, var(--surface-2) 100%);
+    border:1px solid var(--line);
+    border-radius:26px;
+    padding:26px 20px 20px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    position:relative;
+    overflow:hidden;
+  }
+
+  .dial-wrap{
+    position:relative;
+    width:min(62vw, 250px);
+    height:min(62vw, 250px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .dial-wrap svg{ position:absolute; inset:0; transform:rotate(-90deg); }
+  .dial-track{ fill:none; stroke:var(--line); stroke-width:9; }
+  .dial-progress{
+    fill:none; stroke:var(--accent); stroke-width:9; stroke-linecap:round;
+    transition:stroke-dashoffset .5s ease, stroke .4s ease;
+    filter:drop-shadow(0 0 6px var(--accent-dim));
+  }
+
+  .dial-center{ text-align:center; }
+  .bpm-value{
+    font-family:'Space Grotesk',monospace;
+    font-weight:700;
+    font-size:clamp(48px,14vw,64px);
+    letter-spacing:-1px;
+    color:var(--text);
+    display:flex; align-items:baseline; justify-content:center; gap:6px;
+  }
+  .bpm-value .unit{
+    font-family:'Inter',sans-serif;
+    font-weight:500;
+    font-size:14px;
+    color:var(--muted);
+  }
+  .bpm-heart{
+    display:inline-block; margin-right:2px;
+    color:var(--accent);
+    transform-origin:center;
+  }
+  .bpm-heart.beat{ animation:beat 0.55s ease-out; }
+  @keyframes beat{
+    0%{ transform:scale(1); }
+    30%{ transform:scale(1.35); }
+    60%{ transform:scale(0.95); }
+    100%{ transform:scale(1); }
+  }
+
+  .contact-flag{
+    margin-top:6px;
+    font-size:11.5px;
+    color:var(--muted);
+  }
+  .contact-flag.bad{ color:var(--z-peak); }
+
+  .zone-tag{
+    margin-top:16px;
+    display:flex; align-items:center; gap:8px;
+    background:var(--ink);
+    border:1px solid var(--line);
+    padding:7px 14px;
+    border-radius:16px;
+    font-size:13px;
+  }
+  .zone-swatch{ width:9px; height:9px; border-radius:50%; background:var(--accent); }
+  .zone-tag b{ font-weight:600; }
+  .zone-tag span{ color:var(--muted); }
+
+  /* ---------- Stat strip ---------- */
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+  }
+  .stat{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:12px 8px;
+    text-align:center;
+  }
+  .stat .label{
+    font-size:10.5px;
+    color:var(--muted);
+    font-weight:500;
+  }
+  .stat .val{
+    font-family:'Space Grotesk',monospace;
+    font-size:19px;
+    font-weight:600;
+    margin-top:4px;
+  }
+  .stat.min .val{ color:var(--z-warmup); }
+  .stat.max .val{ color:var(--z-peak); }
+  .stat.stress .val{ font-size:15px; }
+
+  /* ---------- Chart panel ---------- */
+  .panel{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:14px 12px 10px;
+  }
+  .panel-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:0 4px 10px;
+  }
+  .panel-head .t{
+    font-size:13px; font-weight:600; color:var(--text);
+  }
+  .legend{
+    display:flex; gap:10px; font-size:10.5px; color:var(--muted);
+  }
+  .legend span{ display:flex; align-items:center; gap:4px; }
+  .legend i{ width:8px; height:8px; border-radius:2px; display:inline-block; }
+
+  canvas#chart{
+    width:100%;
+    height:220px;
+    display:block;
+    border-radius:12px;
+  }
+
+  .zone-key{
+    display:flex;
+    justify-content:space-between;
+    gap:4px;
+    margin-top:10px;
+    padding:0 2px;
+  }
+  .zone-key .zk{
+    flex:1;
+    text-align:center;
+    font-size:9.5px;
+    color:var(--muted);
+    border-top:3px solid transparent;
+    padding-top:5px;
+  }
+
+  /* ---------- Settings ---------- */
+  .settings{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:14px 16px 16px;
+  }
+  .settings .t{
+    font-size:13px; font-weight:600; margin-bottom:12px;
+  }
+  .field-row{
+    display:flex; gap:10px;
+  }
+  .field{
+    flex:1;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .field label{
+    font-size:11px; color:var(--muted); font-weight:500;
+  }
+  .field .input-wrap{
+    display:flex; align-items:center;
+    background:var(--ink);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:0 12px;
+  }
+  .field input{
+    background:transparent; border:none; outline:none;
+    color:var(--text);
+    font-family:'Space Grotesk',monospace;
+    font-size:16px;
+    padding:10px 0;
+    width:100%;
+  }
+  .field .suf{ font-size:11.5px; color:var(--muted); }
+
+  .reset-btn{
+    margin-top:14px;
+    width:100%;
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--muted);
+    padding:11px;
+    border-radius:12px;
+    font-size:13px;
+    font-weight:500;
+    font-family:'Inter',sans-serif;
+    cursor:pointer;
+  }
+  .reset-btn:active{ transform:scale(0.99); }
+
+  .footer-note{
+    text-align:center;
+    font-size:11px;
+    color:var(--muted);
+    padding:2px 10px 0;
+    line-height:1.5;
+  }
+  .footer-note b{ color:var(--text); }
+
+  @media (max-width:360px){
+    .stats{ grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="name">Heart Rate Monitor</div>
+      <div class="sub" id="deviceSub">No sensor connected</div>
+    </div>
+    <button class="conn-btn" id="connBtn">
+      <span class="dot"></span>
+      <span id="connBtnLabel">Connect</span>
+    </button>
+  </div>
+
+  <div class="hero">
+    <div class="dial-wrap">
+      <svg viewBox="0 0 200 200">
+        <circle class="dial-track" cx="100" cy="100" r="88"></circle>
+        <circle class="dial-progress" id="dialProgress" cx="100" cy="100" r="88"
+          stroke-dasharray="553" stroke-dashoffset="553"></circle>
+      </svg>
+      <div class="dial-center">
+        <div class="bpm-value">
+          <span class="bpm-heart" id="heartGlyph">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.9-10.2-9.3C-.3 7.9 1.7 4 5.6 4c2.2 0 3.9 1.2 4.9 2.9C11.5 5.2 13.2 4 15.4 4c3.9 0 5.9 3.9 3.8 7.7C19.5 16.1 12 21 12 21z"/></svg>
+          </span>
+          <span id="bpmVal">--</span>
+          <span class="unit">bpm</span>
+        </div>
+        <div class="contact-flag" id="contactFlag">Waiting for signal</div>
+      </div>
+    </div>
+    <div class="zone-tag">
+      <span class="zone-swatch" id="zoneSwatch"></span>
+      <b id="zoneName">Resting</b>
+      <span id="zonePct">&middot; -- % of max HR</span>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat min">
+      <div class="label">Min</div>
+      <div class="val" id="minVal">--</div>
+    </div>
+    <div class="stat avg">
+      <div class="label">Avg (smoothed)</div>
+      <div class="val" id="avgVal">--</div>
+    </div>
+    <div class="stat max">
+      <div class="label">Max</div>
+      <div class="val" id="maxVal">--</div>
+    </div>
+    <div class="stat stress">
+      <div class="label">Stress</div>
+      <div class="val" id="stressVal">--</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <div class="t">Live trend</div>
+      <div class="legend">
+        <span><i style="background:var(--muted); opacity:.5"></i>reading</span>
+        <span><i style="background:var(--accent)"></i>moving avg</span>
+      </div>
+    </div>
+    <canvas id="chart"></canvas>
+    <div class="zone-key" id="zoneKey"></div>
+  </div>
+
+  <div class="settings">
+    <div class="t">Settings</div>
+    <div class="field-row">
+      <div class="field">
+        <label for="ageInput">Age</label>
+        <div class="input-wrap">
+          <input type="number" id="ageInput" value="35" min="5" max="100" inputmode="numeric">
+          <span class="suf">yrs</span>
+        </div>
+      </div>
+      <div class="field">
+        <label for="avgInput">Moving average window</label>
+        <div class="input-wrap">
+          <input type="number" id="avgInput" value="5" min="1" max="60" inputmode="numeric">
+          <span class="suf">sec</span>
+        </div>
+      </div>
+    </div>
+    <button class="reset-btn" id="resetBtn">Reset session</button>
+  </div>
+
+  <div class="footer-note">
+    Standard BLE Heart Rate Service (0x180D / 0x2A37).<br>
+    Works with any compliant chest strap or armband, incl. <b>Crane/Workzone AA5-CDBT-1</b>.
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- State ----------
+  let device=null, server=null, hrChar=null;
+  let raw=[];            // {t, hr}
+  let rrIntervals=[];    // ms, rolling
+  let smoothed=[];       // {t, v}
+  let sessionMin=null, sessionMax=null;
+  let lastBeatFlash=0;
+
+  const els = {
+    connBtn: document.getElementById('connBtn'),
+    connBtnLabel: document.getElementById('connBtnLabel'),
+    deviceSub: document.getElementById('deviceSub'),
+    bpmVal: document.getElementById('bpmVal'),
+    heartGlyph: document.getElementById('heartGlyph'),
+    contactFlag: document.getElementById('contactFlag'),
+    dialProgress: document.getElementById('dialProgress'),
+    zoneSwatch: document.getElementById('zoneSwatch'),
+    zoneName: document.getElementById('zoneName'),
+    zonePct: document.getElementById('zonePct'),
+    minVal: document.getElementById('minVal'),
+    avgVal: document.getElementById('avgVal'),
+    maxVal: document.getElementById('maxVal'),
+    stressVal: document.getElementById('stressVal'),
+    ageInput: document.getElementById('ageInput'),
+    avgInput: document.getElementById('avgInput'),
+    resetBtn: document.getElementById('resetBtn'),
+    zoneKey: document.getElementById('zoneKey'),
+    canvas: document.getElementById('chart'),
+  };
+
+  const ZONES = [
+    { key:'resting',  name:'Resting',   from:0,    to:0.5,  color:'--z-resting'  },
+    { key:'warmup',   name:'Warm Up',   from:0.5,  to:0.6,  color:'--z-warmup'   },
+    { key:'fatburn',  name:'Fat Burn',  from:0.6,  to:0.7,  color:'--z-fatburn'  },
+    { key:'cardio',   name:'Cardio',    from:0.7,  to:0.8,  color:'--z-cardio'   },
+    { key:'hardcore', name:'Hardcore',  from:0.8,  to:0.9,  color:'--z-hardcore' },
+    { key:'peak',     name:'Peak',      from:0.9,  to:1.15, color:'--z-peak'     },
+  ];
+
+  function cssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function maxHR(){
+    const age = parseFloat(els.ageInput.value) || 35;
+    return 220 - age;
+  }
+
+  function zoneFor(hr){
+    const pct = hr / maxHR();
+    for(const z of ZONES){
+      if(pct >= z.from && pct < z.to) return {...z, pct};
+    }
+    return {...ZONES[ZONES.length-1], pct};
+  }
+
+  function buildZoneKey(){
+    els.zoneKey.innerHTML = '';
+    ZONES.forEach(z=>{
+      const d = document.createElement('div');
+      d.className = 'zk';
+      d.style.borderTopColor = cssVar(z.color);
+      d.textContent = z.name;
+      els.zoneKey.appendChild(d);
+    });
+  }
+  buildZoneKey();
+
+  // ---------- Web Bluetooth ----------
+  async function toggleConnect(){
+    if(device && server && server.connected){
+      server.disconnect();
+      return;
+    }
+    if(!navigator.bluetooth){
+      alert('Web Bluetooth is not available in this browser. Open this page in Chrome for Android.');
+      return;
+    }
+    try{
+      els.connBtnLabel.textContent = 'Scanning…';
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ['heart_rate'] }],
+      });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+      els.connBtnLabel.textContent = 'Connecting…';
+      server = await device.gatt.connect();
+      const service = await server.getPrimaryService('heart_rate');
+      hrChar = await service.getCharacteristic('heart_rate_measurement');
+      await hrChar.startNotifications();
+      hrChar.addEventListener('characteristicvaluechanged', onHRNotify);
+
+      els.connBtn.classList.add('on');
+      els.connBtnLabel.textContent = 'Disconnect';
+      els.deviceSub.textContent = (device.name || 'HR sensor') + ' · connected';
+    }catch(err){
+      console.error(err);
+      els.connBtnLabel.textContent = 'Connect';
+      if(err && err.name !== 'NotFoundError'){
+        alert('Could not connect: ' + err.message);
+      }
+    }
+  }
+
+  function onDisconnected(){
+    els.connBtn.classList.remove('on');
+    els.connBtnLabel.textContent = 'Connect';
+    els.deviceSub.textContent = 'Disconnected';
+    els.contactFlag.textContent = 'No signal';
+    els.contactFlag.classList.add('bad');
+  }
+
+  function onHRNotify(event){
+    const value = event.target.value;
+    const parsed = parseHRMeasurement(value);
+    const now = Date.now();
+
+    raw.push({ t: now, hr: parsed.hr });
+    if(parsed.rrs && parsed.rrs.length){
+      rrIntervals.push(...parsed.rrs);
+      if(rrIntervals.length > 40) rrIntervals.splice(0, rrIntervals.length - 40);
+    }
+    // trim raw buffer to last 10 minutes
+    const cutoff = now - 10*60*1000;
+    while(raw.length && raw[0].t < cutoff) raw.shift();
+
+    if(sessionMin===null || parsed.hr < sessionMin) sessionMin = parsed.hr;
+    if(sessionMax===null || parsed.hr > sessionMax) sessionMax = parsed.hr;
+
+    els.bpmVal.textContent = parsed.hr;
+    els.heartGlyph.classList.remove('beat');
+    void els.heartGlyph.offsetWidth; // restart animation
+    els.heartGlyph.classList.add('beat');
+
+    if(parsed.contactSupported){
+      els.contactFlag.textContent = parsed.contactDetected ? 'Contact detected' : 'Check sensor contact';
+      els.contactFlag.classList.toggle('bad', !parsed.contactDetected);
+    } else {
+      els.contactFlag.textContent = 'Signal active';
+      els.contactFlag.classList.remove('bad');
+    }
+
+    updateDialAndZone(parsed.hr);
+    els.minVal.textContent = sessionMin;
+    els.maxVal.textContent = sessionMax;
+  }
+
+  // Bluetooth GATT Heart Rate Measurement (0x2A37) parser per spec
+  function parseHRMeasurement(dataView){
+    const flags = dataView.getUint8(0);
+    let idx = 1;
+    const hr16 = flags & 0x01;
+    let hr;
+    if(hr16){ hr = dataView.getUint16(idx, true); idx += 2; }
+    else { hr = dataView.getUint8(idx); idx += 1; }
+
+    const contactSupported = !!((flags >> 2) & 0x01);
+    const contactDetected  = !!((flags >> 1) & 0x01);
+    const energyPresent    = !!((flags >> 3) & 0x01);
+    const rrPresent        = !!((flags >> 4) & 0x01);
+
+    let energy = null;
+    if(energyPresent){ energy = dataView.getUint16(idx, true); idx += 2; }
+
+    const rrs = [];
+    if(rrPresent){
+      while(idx + 1 < dataView.byteLength){
+        const rr1024 = dataView.getUint16(idx, true); idx += 2;
+        rrs.push(rr1024 / 1024 * 1000); // convert to ms
+      }
+    }
+    return { hr, contactSupported, contactDetected, energy, rrs };
+  }
+
+  function updateDialAndZone(hr){
+    const z = zoneFor(hr);
+    const color = cssVar(z.color);
+    document.documentElement.style.setProperty('--accent', color);
+    document.documentElement.style.setProperty('--accent-dim', color + '55');
+
+    const circumference = 553; // 2*pi*88
+    const capPct = Math.min(1, hr / (maxHR()*1.05));
+    els.dialProgress.style.strokeDashoffset = String(circumference * (1 - capPct));
+
+    els.zoneSwatch.style.background = color;
+    els.zoneName.textContent = z.name;
+    els.zonePct.textContent = '· ' + Math.round(z.pct*100) + '% of max HR';
+  }
+
+  // ---------- Moving average (every second) & stress ----------
+  function avgWindowSec(){
+    return Math.max(1, parseFloat(els.avgInput.value) || 5);
+  }
+
+  function tick(){
+    const now = Date.now();
+    const win = avgWindowSec() * 1000;
+    const inWindow = raw.filter(r => now - r.t <= win);
+
+    if(inWindow.length){
+      const mean = inWindow.reduce((s,r)=>s+r.hr,0) / inWindow.length;
+      smoothed.push({ t: now, v: mean });
+      els.avgVal.textContent = Math.round(mean);
+    } else {
+      els.avgVal.textContent = '--';
+    }
+    // keep last 10 minutes of smoothed points
+    const cutoff = now - 10*60*1000;
+    while(smoothed.length && smoothed[0].t < cutoff) smoothed.shift();
+
+    updateStress(now);
+    drawChart();
+  }
+
+  function stdev(arr){
+    if(arr.length < 2) return 0;
+    const m = arr.reduce((a,b)=>a+b,0)/arr.length;
+    const v = arr.reduce((a,b)=>a+(b-m)*(b-m),0)/(arr.length-1);
+    return Math.sqrt(v);
+  }
+
+  function updateStress(now){
+    let score, label;
+    const recentRR = rrIntervals.slice(-16);
+    if(recentRR.length >= 6){
+      // RMSSD of recent RR intervals: higher variability -> calmer, lower -> more stressed
+      let sumSq = 0;
+      for(let i=1;i<recentRR.length;i++){
+        const d = recentRR[i]-recentRR[i-1];
+        sumSq += d*d;
+      }
+      const rmssd = Math.sqrt(sumSq/(recentRR.length-1));
+      if(rmssd > 45) { label='Low'; score=0; }
+      else if(rmssd > 25){ label='Moderate'; score=1; }
+      else if(rmssd > 12){ label='High'; score=2; }
+      else { label='Very High'; score=3; }
+    } else {
+      // fallback: fluctuation of raw HR over the last 20s
+      const recent = raw.filter(r => now - r.t <= 20000).map(r=>r.hr);
+      const sd = stdev(recent);
+      if(sd < 2.5){ label='Low'; score=0; }
+      else if(sd < 5){ label='Moderate'; score=1; }
+      else if(sd < 9){ label='High'; score=2; }
+      else { label='Very High'; score=3; }
+    }
+    const colors = ['var(--z-fatburn)','var(--z-warmup)','var(--z-hardcore)','var(--z-peak)'];
+    els.stressVal.textContent = label;
+    els.stressVal.style.color = colors[score];
+  }
+
+  // ---------- Chart ----------
+  const ctx = els.canvas.getContext('2d');
+  let dpr = window.devicePixelRatio || 1;
+
+  function resizeCanvas(){
+    dpr = window.devicePixelRatio || 1;
+    const rect = els.canvas.getBoundingClientRect();
+    els.canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    els.canvas.height = Math.max(1, Math.round(220 * dpr));
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  function drawChart(){
+    const W = els.canvas.width, H = els.canvas.height;
+    if(W===0||H===0) return;
+    ctx.clearRect(0,0,W,H);
+
+    const now = Date.now();
+    const windowMs = 120*1000; // show last 2 minutes
+    const t0 = now - windowMs;
+
+    const mh = maxHR();
+    const yMax = Math.max(mh*1.1, sessionMax ? sessionMax+15 : mh*0.7);
+    const yMin = 40;
+
+    const xForT = t => ((t - t0) / windowMs) * W;
+    const yForV = v => H - ((v - yMin) / (yMax - yMin)) * H;
+
+    // zone background bands
+    ZONES.forEach(z=>{
+      const vFrom = z.from*mh, vTo = Math.min(z.to*mh, yMax);
+      if(vTo <= yMin) return;
+      const yTop = yForV(Math.min(vTo,yMax));
+      const yBot = yForV(Math.max(vFrom,yMin));
+      ctx.fillStyle = cssVar(z.color);
+      ctx.globalAlpha = 0.14;
+      ctx.fillRect(0, yTop, W, yBot - yTop);
+    });
+    ctx.globalAlpha = 1;
+
+    // horizontal grid + labels
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = `${11*dpr}px Inter, sans-serif`;
+    ctx.lineWidth = 1;
+    const step = 20;
+    for(let v = Math.ceil(yMin/step)*step; v <= yMax; v += step){
+      const y = yForV(v);
+      ctx.beginPath();
+      ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+      ctx.fillText(String(v), 6*dpr, y - 3*dpr);
+    }
+
+    // raw scatter
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    raw.forEach(r=>{
+      if(r.t < t0) return;
+      const x = xForT(r.t), y = yForV(r.hr);
+      ctx.beginPath();
+      ctx.arc(x,y,1.6*dpr,0,Math.PI*2);
+      ctx.fill();
+    });
+
+    // smoothed moving-average line
+    const pts = smoothed.filter(p => p.t >= t0);
+    if(pts.length > 1){
+      const accent = cssVar('--z-resting');
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#FF5D73';
+      ctx.lineWidth = 2.5*dpr;
+      ctx.lineJoin='round'; ctx.lineCap='round';
+      ctx.beginPath();
+      pts.forEach((p,i)=>{
+        const x = xForT(p.t), y = yForV(p.v);
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+
+      // glow dot at latest point
+      const last = pts[pts.length-1];
+      ctx.beginPath();
+      ctx.arc(xForT(last.t), yForV(last.v), 3.5*dpr, 0, Math.PI*2);
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fill();
+    }
+  }
+
+  // ---------- Controls ----------
+  els.connBtn.addEventListener('click', toggleConnect);
+  els.resetBtn.addEventListener('click', ()=>{
+    raw = []; smoothed = []; rrIntervals = [];
+    sessionMin = null; sessionMax = null;
+    els.minVal.textContent='--'; els.maxVal.textContent='--'; els.avgVal.textContent='--';
+    els.stressVal.textContent='--';
+    drawChart();
+  });
+  els.ageInput.addEventListener('change', ()=> drawChart());
+
+  // ---------- Init ----------
+  resizeCanvas();
+  setTimeout(resizeCanvas, 50); // catch late layout on mobile
+  drawChart();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
