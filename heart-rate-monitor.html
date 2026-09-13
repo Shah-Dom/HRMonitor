@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<title>Heart Rate Monitor</title>
+<title>HR Monitor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -416,7 +416,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <div class="name">Heart Rate Monitor</div>
+      <div class="name">Shahram Heart Rate Monitor</div>
       <div class="sub" id="deviceSub">No sensor connected</div>
     </div>
     <button class="conn-btn" id="connBtn">
@@ -424,6 +424,8 @@
       <span id="connBtnLabel">Connect</span>
     </button>
   </div>
+
+  <button class="action-btn" id="quickConnectBtn" style="margin-top:-6px;">Quick connect to last sensor</button>
 
   <div class="hero">
     <div class="dial-wrap">
@@ -540,7 +542,7 @@
 
   <div class="footer-note">
     Standard BLE Heart Rate Service (0x180D / 0x2A37).<br>
-    Works with any compliant chest strap or armband, incl. <b>Crane/Workzone AA5-CDBT-1</b>.<br>
+    Works with any compliant chest strap or armband. Your device is <b>MAC: 6C:EC:EB:20:13:62</b>.<br>
     HRV, stress and zone figures are estimates for personal tracking, not medical measurements.
   </div>
 
@@ -552,6 +554,7 @@
 
   // ---------- State ----------
   let device=null, server=null, hrChar=null;
+  let sessionStartTime=null; // ms timestamp of first reading this session
   let raw=[];            // {t, hr}
   let rrIntervals=[];    // ms, rolling
   let smoothed=[];       // {t, v}
@@ -564,6 +567,7 @@
 
   const els = {
     connBtn: document.getElementById('connBtn'),
+    quickConnectBtn: document.getElementById('quickConnectBtn'),
     connBtnLabel: document.getElementById('connBtnLabel'),
     deviceSub: document.getElementById('deviceSub'),
     bpmVal: document.getElementById('bpmVal'),
@@ -651,6 +655,27 @@
   }
 
   // ---------- Web Bluetooth ----------
+  const LAST_DEVICE_KEY = 'hrmonitor_last_device_id';
+
+  // Shared post-pairing setup: subscribe to notifications and update the UI.
+  // Used by both the normal picker flow and the quick-reconnect flow.
+  async function finishConnectionSetup(dev){
+    device = dev;
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    server = await device.gatt.connect();
+    const service = await server.getPrimaryService('heart_rate');
+    hrChar = await service.getCharacteristic('heart_rate_measurement');
+    await hrChar.startNotifications();
+    hrChar.addEventListener('characteristicvaluechanged', onHRNotify);
+
+    // remember this device so Quick Connect can find it again without the picker
+    try{ localStorage.setItem(LAST_DEVICE_KEY, device.id); }catch(e){}
+
+    els.connBtn.classList.add('on');
+    els.connBtnLabel.textContent = 'Disconnect';
+    els.deviceSub.textContent = (device.name || 'HR sensor') + ' · connected';
+  }
+
   async function toggleConnect(){
     if(device && server && server.connected){
       server.disconnect();
@@ -662,26 +687,58 @@
     }
     try{
       els.connBtnLabel.textContent = 'Scanning…';
-      device = await navigator.bluetooth.requestDevice({
+      const dev = await navigator.bluetooth.requestDevice({
         filters: [{ services: ['heart_rate'] }],
       });
-      device.addEventListener('gattserverdisconnected', onDisconnected);
       els.connBtnLabel.textContent = 'Connecting…';
-      server = await device.gatt.connect();
-      const service = await server.getPrimaryService('heart_rate');
-      hrChar = await service.getCharacteristic('heart_rate_measurement');
-      await hrChar.startNotifications();
-      hrChar.addEventListener('characteristicvaluechanged', onHRNotify);
-
-      els.connBtn.classList.add('on');
-      els.connBtnLabel.textContent = 'Disconnect';
-      els.deviceSub.textContent = (device.name || 'HR sensor') + ' · connected';
+      await finishConnectionSetup(dev);
     }catch(err){
       console.error(err);
       els.connBtnLabel.textContent = 'Connect';
       if(err && err.name !== 'NotFoundError'){
         alert('Could not connect: ' + err.message);
       }
+    }
+  }
+
+  // Reconnect to the last-used sensor without showing the device picker.
+  // Note: Web Bluetooth never exposes the sensor's real MAC address to the page
+  // (that's blocked for privacy) — it only gives the browser an opaque per-site
+  // device id. So "the default device" here means "whichever sensor you paired
+  // last time", not the literal 6C:EC:EB:20:13:62 address.
+  async function quickConnect(){
+    if(device && server && server.connected){
+      alert('Already connected to a sensor.');
+      return;
+    }
+    if(!navigator.bluetooth){
+      alert('Web Bluetooth is not available in this browser. Open this page in Chrome for Android.');
+      return;
+    }
+    if(!navigator.bluetooth.getDevices){
+      alert('This browser does not support silent reconnect. Use the Connect button instead (it will remember the sensor for next time once support is available).');
+      return;
+    }
+    const savedId = localStorage.getItem(LAST_DEVICE_KEY);
+    if(!savedId){
+      alert('No sensor saved yet. Tap Connect once to pair your sensor — after that, Quick Connect will skip the picker.');
+      return;
+    }
+    try{
+      els.quickConnectBtn.textContent = 'Reconnecting…';
+      const known = await navigator.bluetooth.getDevices();
+      const match = known.find(d => d.id === savedId);
+      if(!match){
+        alert('The saved sensor is no longer authorized for this page. Tap Connect once to re-pair it.');
+        els.quickConnectBtn.textContent = 'Quick connect to last sensor';
+        return;
+      }
+      await finishConnectionSetup(match);
+      els.quickConnectBtn.textContent = 'Quick connect to last sensor';
+    }catch(err){
+      console.error(err);
+      els.quickConnectBtn.textContent = 'Quick connect to last sensor';
+      alert('Could not reconnect: ' + err.message + ' — make sure the sensor is powered on and nearby.');
     }
   }
 
@@ -699,13 +756,14 @@
     const parsed = parseHRMeasurement(value);
     const now = Date.now();
 
+    if(sessionStartTime === null) sessionStartTime = now;
     raw.push({ t: now, hr: parsed.hr });
     if(parsed.rrs && parsed.rrs.length){
       rrIntervals.push(...parsed.rrs);
       if(rrIntervals.length > 40) rrIntervals.splice(0, rrIntervals.length - 40);
     }
-    // trim raw buffer to last 10 minutes
-    const cutoff = now - 10*60*1000;
+    // trim raw buffer to last 60 minutes (keeps a full session on screen)
+    const cutoff = now - 60*60*1000;
     while(raw.length && raw[0].t < cutoff) raw.shift();
 
     if(sessionMin===null || parsed.hr < sessionMin) sessionMin = parsed.hr;
@@ -834,8 +892,8 @@
     } else {
       els.avgVal.textContent = '--';
     }
-    // keep last 10 minutes of smoothed points
-    const cutoff = now - 10*60*1000;
+    // keep last 60 minutes of smoothed points
+    const cutoff = now - 60*60*1000;
     while(smoothed.length && smoothed[0].t < cutoff) smoothed.shift();
 
     computeHRVAndStress(now);
@@ -875,7 +933,11 @@
     ctx.clearRect(0,0,W,H);
 
     const now = Date.now();
-    const windowMs = 120*1000; // show last 2 minutes
+    const minWindowMs = 120*1000; // never zoom in tighter than 2 minutes
+    const elapsed = sessionStartTime ? (now - sessionStartTime) : 0;
+    // once the session runs longer than the minimum window, gradually widen
+    // the window (reduce horizontal scale) so the entire session stays on screen
+    const windowMs = Math.max(minWindowMs, elapsed + 3000);
     const t0 = now - windowMs;
 
     const mh = maxHR();
@@ -892,7 +954,7 @@
       const yTop = yForV(Math.min(vTo,yMax));
       const yBot = yForV(Math.max(vFrom,yMin));
       ctx.fillStyle = cssVar(z.color);
-      ctx.globalAlpha = 0.32;
+      ctx.globalAlpha = 0.5;    // ← band opacity
       ctx.fillRect(0, yTop, W, yBot - yTop);
     });
     ctx.globalAlpha = 1;
@@ -923,8 +985,8 @@
         const color = cssVar(z.color);
         const topY = Math.min(y0,y1);
         const grad = ctx.createLinearGradient(0, topY, 0, H);
-        grad.addColorStop(0, hexToRgba(color, 0.45));
-        grad.addColorStop(1, hexToRgba(color, 0));
+        grad.addColorStop(0, hexToRgba(color, 0.85)); // ← opacity at the line (top)
+        grad.addColorStop(1, hexToRgba(color, 0)); // ← opacity at the bottom (0 = fully transparent)
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.moveTo(x0, H);
@@ -948,13 +1010,13 @@
 
     // smoothed moving-average line — bold, glowing
     if(pts.length > 1){
-      const strokeColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#FF5D73';
+      const strokeColor = '#FFFFFF';;
       ctx.save();
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = 4.5*dpr;
+      ctx.lineWidth = 2*dpr; // ← thickness, bump this up or down
       ctx.lineJoin='round'; ctx.lineCap='round';
       ctx.shadowColor = strokeColor;
-      ctx.shadowBlur = 10*dpr;
+      ctx.shadowBlur = 1.5*dpr; // ← glow intensity around the line
       ctx.beginPath();
       pts.forEach((p,i)=>{
         const x = xForT(p.t), y = yForV(p.v);
@@ -1094,8 +1156,10 @@
 
   // ---------- Controls ----------
   els.connBtn.addEventListener('click', toggleConnect);
+  els.quickConnectBtn.addEventListener('click', quickConnect);
   els.resetBtn.addEventListener('click', ()=>{
     raw = []; smoothed = []; rrIntervals = [];
+    sessionStartTime = null;
     sessionMin = null; sessionMax = null;
     els.minVal.textContent='--'; els.maxVal.textContent='--'; els.avgVal.textContent='--';
     els.stressVal.textContent='--'; els.hrvVal.textContent='--';
