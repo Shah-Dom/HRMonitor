@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <title>HR Monitor</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0A1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HR Monitor">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -397,6 +405,69 @@
 
   .settings .btn-row{ margin-top:14px; }
 
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:11px 2px;
+    border-top:1px solid var(--line);
+    font-size:13px;
+    color:var(--text);
+  }
+  .field-row + .toggle-row{ margin-top:4px; }
+  input.switch{
+    appearance:none; -webkit-appearance:none;
+    width:42px; height:24px;
+    background:var(--ink);
+    border:1px solid var(--line);
+    border-radius:14px;
+    position:relative;
+    cursor:pointer;
+    outline:none;
+    flex:none;
+    transition:background .2s, border-color .2s;
+  }
+  input.switch::before{
+    content:'';
+    position:absolute;
+    top:2px; left:2px;
+    width:18px; height:18px;
+    border-radius:50%;
+    background:var(--muted);
+    transition:transform .2s ease, background .2s ease;
+  }
+  input.switch:checked{
+    background:var(--accent-dim);
+    border-color:var(--accent);
+  }
+  input.switch:checked::before{
+    background:var(--accent);
+    transform:translateX(18px);
+  }
+
+  .battery-saver-overlay{
+    position:fixed; inset:0;
+    background:#000000;
+    z-index:9999;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:10px;
+  }
+  .bs-heart{
+    width:26px; height:26px;
+    color:#3a0b10;
+  }
+  .bs-num{
+    font-family:'Space Grotesk',monospace;
+    font-weight:600;
+    font-size:16vw;
+    color:#3a0b10;
+    line-height:1;
+  }
+  .bs-hint{
+    font-size:11px;
+    color:#241014;
+    margin-top:8px;
+  }
+
   .footer-note{
     text-align:center;
     font-size:11px;
@@ -534,10 +605,26 @@
         </div>
       </div>
     </div>
+    <div class="toggle-row">
+      <span>Keep screen awake</span>
+      <input type="checkbox" id="wakeLockToggle" class="switch">
+    </div>
+    <div class="toggle-row">
+      <span>Battery saver display (OLED)</span>
+      <input type="checkbox" id="batterySaverToggle" class="switch">
+    </div>
     <div class="btn-row">
       <button class="action-btn" id="exportBtn">Export data (CSV)</button>
       <button class="action-btn" id="resetBtn">Reset session</button>
     </div>
+  </div>
+
+  <div class="battery-saver-overlay" id="batterySaverOverlay" style="display:none;">
+    <div class="bs-heart">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.9-10.2-9.3C-.3 7.9 1.7 4 5.6 4c2.2 0 3.9 1.2 4.9 2.9C11.5 5.2 13.2 4 15.4 4c3.9 0 5.9 3.9 3.8 7.7C19.5 16.1 12 21 12 21z"/></svg>
+    </div>
+    <div class="bs-num" id="bsNum">--</div>
+    <div class="bs-hint">tap anywhere to exit battery saver</div>
   </div>
 
   <div class="footer-note">
@@ -589,6 +676,10 @@
     avgInput: document.getElementById('avgInput'),
     resetBtn: document.getElementById('resetBtn'),
     exportBtn: document.getElementById('exportBtn'),
+    wakeLockToggle: document.getElementById('wakeLockToggle'),
+    batterySaverToggle: document.getElementById('batterySaverToggle'),
+    batterySaverOverlay: document.getElementById('batterySaverOverlay'),
+    bsNum: document.getElementById('bsNum'),
     zoneKey: document.getElementById('zoneKey'),
     canvas: document.getElementById('chart'),
     workoutBtn: document.getElementById('workoutBtn'),
@@ -751,6 +842,53 @@
     els.heartGlyph.classList.remove('active');
   }
 
+  // ---------- Keep screen awake (Wake Lock API) ----------
+  let wakeLock = null;
+
+  async function enableWakeLock(){
+    if(!('wakeLock' in navigator)){
+      alert('Keep-awake is not supported in this browser.');
+      els.wakeLockToggle.checked = false;
+      return;
+    }
+    try{
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', ()=>{ wakeLock = null; });
+    }catch(err){
+      console.error(err);
+      els.wakeLockToggle.checked = false;
+    }
+  }
+
+  function disableWakeLock(){
+    if(wakeLock){ wakeLock.release().catch(()=>{}); wakeLock = null; }
+  }
+
+  els.wakeLockToggle.addEventListener('change', ()=>{
+    if(els.wakeLockToggle.checked) enableWakeLock();
+    else disableWakeLock();
+  });
+
+  // the OS releases the wake lock whenever the tab is hidden — re-acquire it
+  // automatically when you switch back, as long as the toggle is still on
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible' && els.wakeLockToggle.checked && !wakeLock){
+      enableWakeLock();
+    }
+  });
+
+  // ---------- Battery saver display (near-black OLED view) ----------
+  function setBatterySaver(on){
+    els.batterySaverOverlay.style.display = on ? 'flex' : 'none';
+  }
+  els.batterySaverToggle.addEventListener('change', ()=>{
+    setBatterySaver(els.batterySaverToggle.checked);
+  });
+  els.batterySaverOverlay.addEventListener('click', ()=>{
+    els.batterySaverToggle.checked = false;
+    setBatterySaver(false);
+  });
+
   function onHRNotify(event){
     const value = event.target.value;
     const parsed = parseHRMeasurement(value);
@@ -770,6 +908,7 @@
     if(sessionMax===null || parsed.hr > sessionMax) sessionMax = parsed.hr;
 
     els.bpmVal.textContent = parsed.hr;
+    els.bsNum.textContent = parsed.hr;
 
     // heart glyph: continuous beat animation synced to real HR tempo
     els.heartGlyph.classList.add('active');
