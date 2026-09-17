@@ -771,6 +771,83 @@
   let reconnectTimer = null;
   const MAX_RECONNECT_ATTEMPTS = 6;
 
+  let batteryLevel = null;      // percent, from Battery Service (0x180F/0x2A19), if the sensor exposes it
+  let batteryPollTimer = null;
+  let signalLabel = null;       // 'Strong' | 'Medium' | 'Weak', from advertisement RSSI, if the browser supports it
+  let advWatchAbort = null;
+
+  // Builds the "BLE HRM · Connected · Strong signal · Battery 9%" status line.
+  // Pieces are only included when we actually have that data.
+  function updateDeviceStatusLine(){
+    if(!(device && server && server.connected)) return;
+    const parts = [device.name || 'BLE HRM', 'Connected'];
+    if(signalLabel) parts.push(signalLabel + ' signal');
+    if(batteryLevel !== null) parts.push('Battery ' + batteryLevel + '%');
+    els.deviceSub.textContent = parts.join(' · ');
+  }
+
+  // Battery Service (0x180F) is optional and READ-only on many sensors (no
+  // notify), so we read once on connect and then poll periodically.
+  async function setupBatteryMonitoring(){
+    batteryLevel = null;
+    clearInterval(batteryPollTimer);
+    try{
+      const service = await server.getPrimaryService('battery_service');
+      const char = await service.getCharacteristic('battery_level');
+      const readAndUpdate = async ()=>{
+        try{
+          const val = await char.readValue();
+          batteryLevel = val.getUint8(0);
+          updateDeviceStatusLine();
+        }catch(e){ /* transient read failure — keep last known value */ }
+      };
+      await readAndUpdate();
+      try{
+        await char.startNotifications();
+        char.addEventListener('characteristicvaluechanged', (ev)=>{
+          batteryLevel = ev.target.value.getUint8(0);
+          updateDeviceStatusLine();
+        });
+      }catch(e){
+        // no notify support — fall back to polling every couple of minutes
+        batteryPollTimer = setInterval(readAndUpdate, 120000);
+      }
+    }catch(e){
+      // this sensor doesn't expose a Battery Service — leave battery % out of the status line
+    }
+  }
+
+  // Signal strength from live advertisement RSSI. This is an experimental
+  // Web Bluetooth feature (watchAdvertisements) and many sensors — including
+  // most chest straps — stop advertising once a GATT connection is active,
+  // so this often simply has no data to show even when it IS supported.
+  function onAdvertisementReceived(event){
+    if(typeof event.rssi !== 'number') return;
+    signalLabel = event.rssi >= -60 ? 'Strong' : (event.rssi >= -75 ? 'Medium' : 'Weak');
+    updateDeviceStatusLine();
+  }
+
+  async function setupSignalMonitoring(dev){
+    signalLabel = null;
+    if(!('watchAdvertisements' in dev)) return; // not supported in this browser
+    try{
+      dev.addEventListener('advertisementreceived', onAdvertisementReceived);
+      advWatchAbort = new AbortController();
+      await dev.watchAdvertisements({ signal: advWatchAbort.signal });
+    }catch(e){
+      // not available on this device/browser combination — leave signal strength out
+    }
+  }
+
+  function teardownExtras(){
+    clearInterval(batteryPollTimer);
+    batteryPollTimer = null;
+    batteryLevel = null;
+    if(advWatchAbort){ advWatchAbort.abort(); advWatchAbort = null; }
+    if(device) device.removeEventListener('advertisementreceived', onAdvertisementReceived);
+    signalLabel = null;
+  }
+
   // Shared post-pairing setup: subscribe to notifications and update the UI.
   // Used by both the normal picker flow and the quick-reconnect flow.
   async function finishConnectionSetup(dev){
@@ -787,7 +864,11 @@
 
     els.connBtn.classList.add('on');
     els.connBtnLabel.textContent = 'Disconnect';
-    els.deviceSub.textContent = (device.name || 'HR sensor') + ' · connected';
+    updateDeviceStatusLine();
+
+    // best-effort extras — never block the main HR connection on these
+    setupBatteryMonitoring();
+    setupSignalMonitoring(device);
   }
 
   async function toggleConnect(){
@@ -867,6 +948,7 @@
     els.contactFlag.textContent = 'No signal';
     els.contactFlag.classList.add('bad');
     els.heartGlyph.classList.remove('active');
+    teardownExtras();
 
     if(manualDisconnect){
       manualDisconnect = false;
