@@ -449,6 +449,7 @@
     background:var(--accent);
     transform:translateX(18px);
   }
+  input.switch:disabled{ opacity:0.45; cursor:default; }
 
   .battery-saver-overlay{
     position:fixed; inset:0;
@@ -569,6 +570,10 @@
     <div class="panel-head">
       <div class="t">Workout</div>
       <div class="workout-timer" id="workoutTimer">00:00</div>
+    </div>
+    <div class="toggle-row" id="recoveryToggleRow">
+      <span>Measure 2-min recovery after finish</span>
+      <input type="checkbox" id="recoveryToggle" class="switch">
     </div>
     <div class="zone-bar" id="workoutLiveBar" style="display:none;"></div>
     <button class="action-btn accent" id="workoutBtn">Start Workout</button>
@@ -697,6 +702,7 @@
     workoutBtn: document.getElementById('workoutBtn'),
     workoutTimer: document.getElementById('workoutTimer'),
     workoutLiveBar: document.getElementById('workoutLiveBar'),
+    recoveryToggle: document.getElementById('recoveryToggle'),
     workoutSummary: document.getElementById('workoutSummary'),
     summaryStats: document.getElementById('summaryStats'),
     summaryRecovery: document.getElementById('summaryRecovery'),
@@ -760,6 +766,10 @@
 
   // ---------- Web Bluetooth ----------
   const LAST_DEVICE_KEY = 'hrmonitor_last_device_id';
+  let manualDisconnect = false;
+  let reconnectAttempts = 0;
+  let reconnectTimer = null;
+  const MAX_RECONNECT_ATTEMPTS = 6;
 
   // Shared post-pairing setup: subscribe to notifications and update the UI.
   // Used by both the normal picker flow and the quick-reconnect flow.
@@ -781,7 +791,10 @@
   }
 
   async function toggleConnect(){
+    clearTimeout(reconnectTimer);
+    reconnectAttempts = 0;
     if(device && server && server.connected){
+      manualDisconnect = true;
       server.disconnect();
       return;
     }
@@ -811,6 +824,8 @@
   // device id. So "the default device" here means "whichever sensor you paired
   // last time", not the literal 6C:EC:EB:20:13:62 address.
   async function quickConnect(){
+    clearTimeout(reconnectTimer);
+    reconnectAttempts = 0;
     if(device && server && server.connected){
       alert('Already connected to a sensor.');
       return;
@@ -849,10 +864,40 @@
   function onDisconnected(){
     els.connBtn.classList.remove('on');
     els.connBtnLabel.textContent = 'Connect';
-    els.deviceSub.textContent = 'Disconnected';
     els.contactFlag.textContent = 'No signal';
     els.contactFlag.classList.add('bad');
     els.heartGlyph.classList.remove('active');
+
+    if(manualDisconnect){
+      manualDisconnect = false;
+      els.deviceSub.textContent = 'Disconnected';
+      reconnectAttempts = 0;
+      return;
+    }
+    scheduleReconnect();
+  }
+
+  // Sensor dropped unexpectedly (out of range, momentary contact loss, etc.) —
+  // retry with backoff rather than making you tap Connect/Quick Connect again.
+  function scheduleReconnect(){
+    if(reconnectAttempts >= MAX_RECONNECT_ATTEMPTS){
+      els.deviceSub.textContent = 'Connection lost — tap Connect or Quick Connect to retry';
+      reconnectAttempts = 0;
+      return;
+    }
+    reconnectAttempts++;
+    const delay = Math.min(2000 * reconnectAttempts, 10000);
+    els.deviceSub.textContent = `Reconnecting… (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(async ()=>{
+      try{
+        await finishConnectionSetup(device);
+        reconnectAttempts = 0;
+      }catch(err){
+        console.error('Reconnect attempt failed', err);
+        scheduleReconnect();
+      }
+    }, delay);
   }
 
   // ---------- Keep screen awake (Wake Lock API) ----------
@@ -1074,6 +1119,7 @@
     }
 
     drawChart();
+    saveSessionState();
   }
 
   // ---------- Chart ----------
@@ -1207,6 +1253,7 @@
     els.workoutBtn.textContent = 'Start Workout';
     els.workoutBtn.classList.remove('active');
     els.workoutTimer.textContent = '00:00';
+    els.recoveryToggle.disabled = false;
     els.workoutLiveBar.style.display = 'none';
     els.workoutLiveBar.innerHTML = '';
     els.workoutSummary.style.display = 'none';
@@ -1290,6 +1337,21 @@
       drop1min: (hr1!=null && pendingWorkoutSummary.endHR!=null) ? pendingWorkoutSummary.endHR - hr1 : null,
       drop2min: (hr2!=null && pendingWorkoutSummary.endHR!=null) ? pendingWorkoutSummary.endHR - hr2 : null,
     };
+    finishAndShowSummary(summary);
+  }
+
+  // Used when the recovery toggle is off — finish the workout immediately
+  // with no recovery phase, and no recovery HR/drop figures.
+  function finalizeWorkoutNoRecovery(){
+    const summary = {
+      ...pendingWorkoutSummary,
+      recoveryEnd: null,
+      hr1min: null, hr2min: null, drop1min: null, drop2min: null,
+    };
+    finishAndShowSummary(summary);
+  }
+
+  function finishAndShowSummary(summary){
     lastWorkoutSummary = summary;
     workoutState = 'idle';
     pendingWorkoutSummary = null;
@@ -1297,6 +1359,7 @@
     els.workoutBtn.classList.remove('active');
     els.workoutBtn.textContent = 'Start Workout';
     els.workoutTimer.textContent = '00:00';
+    els.recoveryToggle.disabled = false;
     renderWorkoutSummary(summary);
   }
 
@@ -1310,6 +1373,7 @@
       els.workoutBtn.classList.add('active');
       els.workoutLiveBar.style.display = 'flex';
       els.workoutSummary.style.display = 'none';
+      els.recoveryToggle.disabled = true; // lock the choice for the duration of this workout
     } else if(workoutState === 'active'){
       endHR = raw.length ? raw[raw.length-1].hr : null;
       pendingWorkoutSummary = {
@@ -1322,13 +1386,19 @@
         zoneMs: {...workoutZoneMs},
         startHR, endHR,
       };
-      workoutState = 'recovering';
-      recoveryStart = Date.now();
-      recoveryEnd = recoveryStart + RECOVERY_MS;
-      els.workoutBtn.disabled = true;
-      els.workoutBtn.classList.remove('active');
       els.workoutLiveBar.style.display = 'none';
-      // finalizeWorkout() is triggered automatically from tick() once RECOVERY_MS elapses
+
+      if(els.recoveryToggle.checked){
+        workoutState = 'recovering';
+        recoveryStart = Date.now();
+        recoveryEnd = recoveryStart + RECOVERY_MS;
+        els.workoutBtn.disabled = true;
+        els.workoutBtn.classList.remove('active');
+        // finalizeWorkout() is triggered automatically from tick() once RECOVERY_MS elapses
+      } else {
+        els.workoutBtn.classList.remove('active');
+        finalizeWorkoutNoRecovery();
+      }
     }
   }
 
@@ -1408,6 +1478,7 @@
     els.hrvGaugeFill.style.width='0%'; els.stressPctVal.textContent='--%'; els.stressLabelVal.textContent='--';
     resetWorkoutState();
     lastWorkoutSummary = null;
+    clearSavedSession();
     drawChart();
   });
   els.exportBtn.addEventListener('click', exportCSV);
@@ -1415,11 +1486,91 @@
   els.workoutBtn.addEventListener('click', toggleWorkout);
   els.newWorkoutBtn.addEventListener('click', resetWorkoutState);
 
+  // ---------- Session persistence (survives reload / crash) ----------
+  const SESSION_KEY = 'hrmonitor_session_v1';
+  const SESSION_MAX_AGE_MS = 6*60*60*1000; // ignore a saved session older than 6 hours
+
+  function saveSessionState(){
+    try{
+      const state = {
+        savedAt: Date.now(),
+        raw, smoothed, rrIntervals,
+        sessionStartTime, sessionMin, sessionMax,
+        age: els.ageInput.value, avgWindow: els.avgInput.value,
+        recoveryToggleChecked: els.recoveryToggle.checked,
+        workoutState, workoutStart, startHR, endHR,
+        workoutZoneMs, workoutMin, workoutMax, workoutSum, workoutCount,
+        recoveryStart, recoveryEnd, pendingWorkoutSummary, lastWorkoutSummary,
+      };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+    }catch(e){ /* storage full or unavailable — session just won't survive a reload */ }
+  }
+
+  function clearSavedSession(){
+    try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+  }
+
+  function loadSessionState(){
+    let s;
+    try{ s = JSON.parse(localStorage.getItem(SESSION_KEY)); }catch(e){ return; }
+    if(!s || !s.savedAt || (Date.now() - s.savedAt) > SESSION_MAX_AGE_MS) return;
+
+    raw = s.raw || [];
+    smoothed = s.smoothed || [];
+    rrIntervals = s.rrIntervals || [];
+    sessionStartTime = s.sessionStartTime ?? null;
+    sessionMin = s.sessionMin ?? null;
+    sessionMax = s.sessionMax ?? null;
+    if(s.age) els.ageInput.value = s.age;
+    if(s.avgWindow) els.avgInput.value = s.avgWindow;
+    if(typeof s.recoveryToggleChecked === 'boolean') els.recoveryToggle.checked = s.recoveryToggleChecked;
+
+    workoutState = s.workoutState || 'idle';
+    workoutStart = s.workoutStart ?? null;
+    startHR = s.startHR ?? null;
+    endHR = s.endHR ?? null;
+    workoutZoneMs = s.workoutZoneMs || {resting:0,warmup:0,fatburn:0,cardio:0,hardcore:0,peak:0};
+    workoutMin = s.workoutMin ?? null;
+    workoutMax = s.workoutMax ?? null;
+    workoutSum = s.workoutSum || 0;
+    workoutCount = s.workoutCount || 0;
+    recoveryStart = s.recoveryStart ?? null;
+    recoveryEnd = s.recoveryEnd ?? null;
+    pendingWorkoutSummary = s.pendingWorkoutSummary ?? null;
+    lastWorkoutSummary = s.lastWorkoutSummary ?? null;
+
+    if(sessionMin !== null) els.minVal.textContent = sessionMin;
+    if(sessionMax !== null) els.maxVal.textContent = sessionMax;
+    if(lastWorkoutSummary) renderWorkoutSummary(lastWorkoutSummary);
+
+    if(workoutState === 'active'){
+      els.workoutBtn.textContent = 'Finish Workout';
+      els.workoutBtn.classList.add('active');
+      els.workoutLiveBar.style.display = 'flex';
+      els.recoveryToggle.disabled = true;
+      updateLiveZoneBar();
+    } else if(workoutState === 'recovering'){
+      els.workoutBtn.disabled = true;
+      els.recoveryToggle.disabled = true;
+      // if the recovery window already fully elapsed while the page was closed,
+      // the next tick() will notice recoveryEnd is in the past and finalize it
+    }
+
+    els.deviceSub.textContent = 'Session restored — tap Quick Connect to resume live readings';
+  }
+
   // ---------- Init ----------
+  loadSessionState();
   resizeCanvas();
   setTimeout(resizeCanvas, 50); // catch late layout on mobile
   drawChart();
   setInterval(tick, 1000);
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', ()=>{
+      navigator.serviceWorker.register('sw.js').catch(err=>console.error('Service worker registration failed', err));
+    });
+  }
 })();
 </script>
 </body>
