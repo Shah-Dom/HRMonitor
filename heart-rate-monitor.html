@@ -346,6 +346,8 @@
   .action-btn:active{ transform:scale(0.99); }
   .action-btn.accent{ border-color:var(--accent); color:var(--accent); }
   .action-btn.accent.active{ background:var(--accent); color:#08101c; }
+  .action-btn:disabled{ opacity:0.55; cursor:default; }
+  .action-btn:disabled:active{ transform:none; }
 
   .summary-stats{
     display:flex; justify-content:space-between; margin-bottom:14px;
@@ -355,6 +357,11 @@
     font-family:'Space Grotesk',monospace; font-weight:600; font-size:16px;
   }
   .summary-stats .l{ font-size:9.5px; color:var(--muted); margin-top:2px; }
+  .summary-stats.recovery{
+    border-top:1px solid var(--line);
+    padding-top:12px;
+    margin-bottom:14px;
+  }
 
   .zone-rows{ display:flex; flex-direction:column; gap:7px; margin-bottom:14px; }
   .zone-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; }
@@ -568,6 +575,7 @@
 
     <div id="workoutSummary" style="display:none; margin-top:14px;">
       <div class="summary-stats" id="summaryStats"></div>
+      <div class="summary-stats recovery" id="summaryRecovery" style="margin-top:2px;"></div>
       <div class="zone-rows" id="summaryZoneRows"></div>
       <div class="btn-row">
         <button class="action-btn" id="newWorkoutBtn">Start New Workout</button>
@@ -647,10 +655,14 @@
   let smoothed=[];       // {t, v}
   let sessionMin=null, sessionMax=null;
 
-  let workoutActive=false, workoutStart=null;
+  let workoutState='idle'; // 'idle' | 'active' | 'recovering'
+  let workoutStart=null, startHR=null, endHR=null;
   let workoutZoneMs={resting:0,warmup:0,fatburn:0,cardio:0,hardcore:0,peak:0};
   let workoutMin=null, workoutMax=null, workoutSum=0, workoutCount=0;
+  let recoveryStart=null, recoveryEnd=null;
+  let pendingWorkoutSummary=null;
   let lastWorkoutSummary=null;
+  const RECOVERY_MS = 120000; // 2-minute post-workout recovery window
 
   const els = {
     connBtn: document.getElementById('connBtn'),
@@ -687,6 +699,7 @@
     workoutLiveBar: document.getElementById('workoutLiveBar'),
     workoutSummary: document.getElementById('workoutSummary'),
     summaryStats: document.getElementById('summaryStats'),
+    summaryRecovery: document.getElementById('summaryRecovery'),
     summaryZoneRows: document.getElementById('summaryZoneRows'),
     newWorkoutBtn: document.getElementById('newWorkoutBtn'),
   };
@@ -1037,9 +1050,10 @@
 
     computeHRVAndStress(now);
 
-    if(workoutActive){
+    if(workoutState === 'active'){
       const latest = raw.length ? raw[raw.length-1].hr : null;
       if(latest != null){
+        if(startHR === null) startHR = latest; // capture first reading after Start if none was available yet
         const z = zoneFor(latest);
         workoutZoneMs[z.key] += 1000;
         workoutSum += latest;
@@ -1049,6 +1063,14 @@
       }
       els.workoutTimer.textContent = formatDuration(Date.now() - workoutStart);
       updateLiveZoneBar();
+    } else if(workoutState === 'recovering'){
+      const remain = recoveryEnd - Date.now();
+      if(remain > 0){
+        els.workoutTimer.textContent = 'Recovery · ' + formatDuration(remain) + ' left';
+        els.workoutBtn.textContent = 'Recording recovery… ' + formatDuration(remain);
+      } else {
+        finalizeWorkout();
+      }
     }
 
     drawChart();
@@ -1175,10 +1197,13 @@
 
   // ---------- Workout ----------
   function resetWorkoutState(){
-    workoutActive = false;
-    workoutStart = null;
+    workoutState = 'idle';
+    workoutStart = null; startHR = null; endHR = null;
+    recoveryStart = null; recoveryEnd = null;
+    pendingWorkoutSummary = null;
     workoutZoneMs = {resting:0,warmup:0,fatburn:0,cardio:0,hardcore:0,peak:0};
     workoutMin=null; workoutMax=null; workoutSum=0; workoutCount=0;
+    els.workoutBtn.disabled = false;
     els.workoutBtn.textContent = 'Start Workout';
     els.workoutBtn.classList.remove('active');
     els.workoutTimer.textContent = '00:00';
@@ -1202,14 +1227,37 @@
     });
   }
 
+  // Find the HR reading closest to a target timestamp (used for the 1-min/
+  // 2-min recovery marks). Averages readings within 4s of the target for
+  // stability; falls back to the single closest reading; gives up (null)
+  // if nothing was recorded within 15s of the target (e.g. sensor dropped).
+  function hrNearTime(targetMs){
+    if(!raw.length) return null;
+    const near = raw.filter(r => Math.abs(r.t - targetMs) <= 4000);
+    if(near.length) return Math.round(near.reduce((a,r)=>a+r.hr,0) / near.length);
+    let closest = raw[0], bestDiff = Math.abs(raw[0].t - targetMs);
+    raw.forEach(r=>{
+      const d = Math.abs(r.t - targetMs);
+      if(d < bestDiff){ bestDiff = d; closest = r; }
+    });
+    return bestDiff <= 15000 ? closest.hr : null;
+  }
+
   function renderWorkoutSummary(summary){
     const total = Object.values(summary.zoneMs).reduce((a,b)=>a+b,0) || 1;
+    const fmtDrop = d => d===null ? '' : (d>=0 ? ' (−' + d + ')' : ' (+' + (-d) + ')');
 
     els.summaryStats.innerHTML = `
       <div><div class="v">${formatDuration(summary.duration)}</div><div class="l">Duration</div></div>
       <div><div class="v">${summary.avg ?? '--'}</div><div class="l">Avg BPM</div></div>
       <div><div class="v">${summary.min ?? '--'}</div><div class="l">Min BPM</div></div>
       <div><div class="v">${summary.max ?? '--'}</div><div class="l">Max BPM</div></div>
+    `;
+    els.summaryRecovery.innerHTML = `
+      <div><div class="v">${summary.startHR ?? '--'}</div><div class="l">Start HR</div></div>
+      <div><div class="v">${summary.endHR ?? '--'}</div><div class="l">End HR</div></div>
+      <div><div class="v">${summary.hr1min ?? '--'}</div><div class="l">1-min Recovery${fmtDrop(summary.drop1min)}</div></div>
+      <div><div class="v">${summary.hr2min ?? '--'}</div><div class="l">2-min Recovery${fmtDrop(summary.drop2min)}</div></div>
     `;
 
     els.summaryZoneRows.innerHTML = '';
@@ -1230,56 +1278,111 @@
     els.workoutLiveBar.style.display = 'none';
   }
 
+  // Called automatically once the 2-minute recovery window elapses.
+  function finalizeWorkout(){
+    const hr1 = hrNearTime(pendingWorkoutSummary.end + 60000);
+    const hr2 = hrNearTime(pendingWorkoutSummary.end + 120000);
+    const summary = {
+      ...pendingWorkoutSummary,
+      recoveryEnd: recoveryEnd,
+      hr1min: hr1,
+      hr2min: hr2,
+      drop1min: (hr1!=null && pendingWorkoutSummary.endHR!=null) ? pendingWorkoutSummary.endHR - hr1 : null,
+      drop2min: (hr2!=null && pendingWorkoutSummary.endHR!=null) ? pendingWorkoutSummary.endHR - hr2 : null,
+    };
+    lastWorkoutSummary = summary;
+    workoutState = 'idle';
+    pendingWorkoutSummary = null;
+    els.workoutBtn.disabled = false;
+    els.workoutBtn.classList.remove('active');
+    els.workoutBtn.textContent = 'Start Workout';
+    els.workoutTimer.textContent = '00:00';
+    renderWorkoutSummary(summary);
+  }
+
   function toggleWorkout(){
-    if(!workoutActive){
+    if(workoutState === 'idle'){
       resetWorkoutState();
-      workoutActive = true;
+      workoutState = 'active';
       workoutStart = Date.now();
+      startHR = raw.length ? raw[raw.length-1].hr : null; // may still be null; tick() fills it in on first reading
       els.workoutBtn.textContent = 'Finish Workout';
       els.workoutBtn.classList.add('active');
       els.workoutLiveBar.style.display = 'flex';
       els.workoutSummary.style.display = 'none';
-    } else {
-      workoutActive = false;
-      lastWorkoutSummary = {
+    } else if(workoutState === 'active'){
+      endHR = raw.length ? raw[raw.length-1].hr : null;
+      pendingWorkoutSummary = {
+        start: workoutStart,
+        end: Date.now(),
         duration: Date.now() - workoutStart,
         avg: workoutCount ? Math.round(workoutSum/workoutCount) : null,
         min: workoutMin,
         max: workoutMax,
         zoneMs: {...workoutZoneMs},
+        startHR, endHR,
       };
-      els.workoutBtn.textContent = 'Start Workout';
+      workoutState = 'recovering';
+      recoveryStart = Date.now();
+      recoveryEnd = recoveryStart + RECOVERY_MS;
+      els.workoutBtn.disabled = true;
       els.workoutBtn.classList.remove('active');
-      renderWorkoutSummary(lastWorkoutSummary);
+      els.workoutLiveBar.style.display = 'none';
+      // finalizeWorkout() is triggered automatically from tick() once RECOVERY_MS elapses
     }
   }
 
   // ---------- Export ----------
+  // Local (not UTC) timestamp string, so the exported times match the clock
+  // on your phone instead of the "Z" (UTC) time — e.g. Sydney AEST is UTC+10,
+  // so a UTC timestamp always reads ~10-11 hours earlier than your local time.
+  function toLocalStamp(ms){
+    const d = new Date(ms);
+    const p = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+
   function exportCSV(){
     const lines = [];
-    lines.push('Heart Rate Monitor session export');
-    lines.push('Generated,' + new Date().toISOString());
+    lines.push('Heart Rate Monitor export');
+    lines.push('Generated,' + toLocalStamp(Date.now()) + ' (local time)');
     lines.push('');
-    lines.push('timestamp,heart_rate_bpm');
-    raw.forEach(r => lines.push(new Date(r.t).toISOString() + ',' + r.hr));
-    lines.push('');
-    lines.push('timestamp,moving_average_bpm');
-    smoothed.forEach(p => lines.push(new Date(p.t).toISOString() + ',' + Math.round(p.v)));
 
     if(lastWorkoutSummary){
+      const w = lastWorkoutSummary;
+      const rangeEnd = w.recoveryEnd || w.end;
+      const inRange = raw.filter(r => r.t >= w.start && r.t <= rangeEnd);
+
+      lines.push('timestamp_local,heart_rate_bpm,phase');
+      inRange.forEach(r=>{
+        const phase = r.t <= w.end ? 'workout' : 'recovery';
+        lines.push(toLocalStamp(r.t) + ',' + r.hr + ',' + phase);
+      });
+
       lines.push('');
-      lines.push('Last workout summary');
-      lines.push('duration_sec,' + Math.round(lastWorkoutSummary.duration/1000));
-      lines.push('avg_bpm,' + (lastWorkoutSummary.avg ?? ''));
-      lines.push('min_bpm,' + (lastWorkoutSummary.min ?? ''));
-      lines.push('max_bpm,' + (lastWorkoutSummary.max ?? ''));
+      lines.push('Workout summary');
+      lines.push('duration_sec,' + Math.round(w.duration/1000));
+      lines.push('start_hr,' + (w.startHR ?? ''));
+      lines.push('end_hr,' + (w.endHR ?? ''));
+      lines.push('avg_bpm,' + (w.avg ?? ''));
+      lines.push('min_bpm,' + (w.min ?? ''));
+      lines.push('max_bpm,' + (w.max ?? ''));
+      lines.push('recovery_1min_hr,' + (w.hr1min ?? ''));
+      lines.push('recovery_1min_drop,' + (w.drop1min ?? ''));
+      lines.push('recovery_2min_hr,' + (w.hr2min ?? ''));
+      lines.push('recovery_2min_drop,' + (w.drop2min ?? ''));
       lines.push('');
       lines.push('zone,seconds,percent');
-      const total = Object.values(lastWorkoutSummary.zoneMs).reduce((a,b)=>a+b,0) || 1;
+      const total = Object.values(w.zoneMs).reduce((a,b)=>a+b,0) || 1;
       ZONES.forEach(z=>{
-        const ms = lastWorkoutSummary.zoneMs[z.key] || 0;
+        const ms = w.zoneMs[z.key] || 0;
         lines.push(z.name + ',' + Math.round(ms/1000) + ',' + Math.round(ms/total*100));
       });
+    } else {
+      lines.push('No workout recorded this session — exporting all measured readings.');
+      lines.push('');
+      lines.push('timestamp_local,heart_rate_bpm');
+      raw.forEach(r => lines.push(toLocalStamp(r.t) + ',' + r.hr));
     }
 
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
